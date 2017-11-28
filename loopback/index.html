@@ -1,0 +1,155 @@
+<html>
+
+<body>
+  <div id="container">
+    <video id="localVideo" autoplay muted></video>
+    <video id="remoteVideo" autoplay></video>
+
+    <div>
+      <button id="startButton" onclick="start()">Start</button>
+      <button id="callButton" onclick="call()">Call</button>
+      <button id="hangupButton" onclick="hangup()">Hang Up</button>
+    </div>
+  </div>
+  <script>
+    var pc1;
+    var pc2;
+    var localStream;
+
+    var localVideo = document.getElementById('localVideo');
+    var remoteVideo = document.getElementById('remoteVideo');
+
+    var startButton = document.getElementById('startButton');
+    var callButton = document.getElementById('callButton');
+    var hangupButton = document.getElementById('hangupButton');
+
+    callButton.disabled = true;
+    hangupButton.disabled = true;
+
+    // get the webcam access and attach to video element
+    function start() {
+      startButton.disabled = true;
+      navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true,
+      })
+      .then(gotStream)
+      .catch(function(e) {
+        console.log(e);
+      });
+    }
+
+    // create peerconnection, associate the streams
+    function call() {
+      var offerOptions = {
+        offerToReceiveAudio: 1,
+        offerToReceiveVideo: 1
+      };
+      
+      pc1 = new RTCPeerConnection();
+      pc2 = new RTCPeerConnection();
+
+      callButton.disabled = true;
+      hangupButton.disabled = false;
+      console.log('starting call');
+      pc1.onicecandidate = function(e) {
+        pc2.addIceCandidate(e.candidate)
+        .then(() => {
+          console.log('Ice candidate added successfully to the pc2');
+        })
+        .catch(err => {
+          console.log('addIceCandidate failure to pc2');
+        });
+      };
+
+      pc2.onicecandidate = function(e) {
+        pc1.addIceCandidate(e.candidate)
+        .then(() => {
+          console.log('Ice candidate added successfully to the pc1');
+        })
+        .catch(err => {
+          console.log('addIceCandidate failure to pc1');
+        });
+      };
+
+      pc1.addStream(localStream);
+      pc2.onaddstream = gotRemoteStream;
+
+      pc1.createOffer(offerOptions)
+      .then( (desc) => {
+        onCreateOfferSuccess(desc);
+      })
+      .catch(err => {
+        console.log('createOffer error' ,err);
+      });
+    }
+
+    function hangup() {
+      console.log('call hangup');
+      pc1.close();
+      pc2.close();
+      pc1 = null;
+      pc2 = null;
+      hangupButton.disabled = true;
+      callButton.disabled = false;
+    }
+
+    function onCreateAnswerSuccess(desc) {
+      pc2.setLocalDescription(desc)
+      .then(value => {
+        console.log('pc2  setLocalDescription success');
+      })
+      .catch(err => {
+        console.log('pc2  setLocalDescription success');
+      })
+
+      pc1.setRemoteDescription(desc)
+      .then(value => {
+        console.log('pc1  setRemoteDescription success');
+      })
+      .catch(err => {
+        console.log('pc1 setRemoteDescription error' ,err);
+      })
+    }
+
+    function onCreateOfferSuccess(desc) {
+      pc1.setLocalDescription(desc)
+      .then(value => {
+        console.log('pc1  setLocalDescription success');
+      })
+      .catch(err => {
+        console.log('pc1  setLocalDescription error' ,err);
+      })
+
+      pc2.setRemoteDescription(desc)
+      .then(value => {
+        console.log('pc2  setRemoteDescription success');
+      })
+      .catch(err => {
+        console.log('pc2 setRemoteDescription error' ,err);
+      })
+
+      pc2.createAnswer()
+      .then(desc => {
+        onCreateAnswerSuccess(desc);
+      })
+      .catch(err => {
+        console.log('createAnswer error' ,err);
+      });
+    }
+
+    function gotStream(stream) {
+      console.log('Received local stream');
+      localVideo.srcObject = stream;
+      localStream = stream;
+      callButton.disabled = false;
+    }
+
+    function gotRemoteStream(e) {
+      remoteVideo.srcObject = e.stream;
+      console.log('pc2 received remote stream');
+    }
+  </script>
+</body>
+
+</html>
