@@ -41,11 +41,6 @@
 
     // create peerconnection, associate the streams
     function call() {
-      var offerOptions = {
-        offerToReceiveAudio: 1,
-        offerToReceiveVideo: 1
-      };
-      
       pc1 = new RTCPeerConnection();
       pc2 = new RTCPeerConnection();
 
@@ -75,7 +70,7 @@
       pc1.addStream(localStream);
       pc2.onaddstream = gotRemoteStream;
 
-      pc1.createOffer(offerOptions)
+      pc1.createOffer()
       .then( (desc) => {
         onCreateOfferSuccess(desc);
       })

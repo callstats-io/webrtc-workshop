@@ -14,6 +14,8 @@ var pcs = {};
 callButton.disabled = true;
 hangupButton.disabled = true;
 
+// Signalling related code
+
 function handleUserJoined(userId) {
   console.log('handleUserJoined ', userId);
   var offerOptions = {
@@ -110,6 +112,9 @@ function sendMessage(to, msg) {
   socket.emit('message', localUserId, to, msg);
 }
 
+// END Signalling related code
+
+// obtains the stream from webcam
 function start() {
   var localVideo = document.getElementById('localVideo');
   startButton.disabled = true;
@@ -128,12 +133,14 @@ function start() {
   })
 }
 
+// initiate the call - Signalling and peerconnection creation
 function call() {
   callButton.disabled = true;
   hangupButton.disabled = false;
   sendUserJoined(localUserId);
 }
 
+// clean up the peerconnection on hang up.
 function hangup() {
   for (var userId in pcs) {
     console.log(userId, 'remove');
@@ -147,9 +154,9 @@ function hangup() {
 
 function createPeerConnection(userId) {
   var pc = new RTCPeerConnection();
-  pc.onicecandidate = onIceCandidate;
-  pc.addStream(localStream);
-  pc.onaddstream = gotRemoteStream;
+  pc.onicecandidate = onIceCandidate; // Ice candidate event handler
+  pc.addStream(localStream); // adding the localStream on to the peerconnection
+  pc.onaddstream = gotRemoteStream; // setting the add stream event listener
   pcs[userId] = pc;
   return pc;
 }
