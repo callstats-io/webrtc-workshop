@@ -1,15 +1,24 @@
 var localStream;
-
 var pc;
+var localUserId;
+var socket;
+var room = 'demo-room';
+var pcs = {};
+var isPolling = false;
+
+var endpointInfo = {
+    type: "browser", // "browser""native""plugin""middlebox"
+    os: "Mac OS",
+    osVersion: "12",
+    buildName: "chrome", //chrome, firefox , edge
+    buildVersion: "46", //
+    appVersion: "1.0.0",
+};
 
 var startButton = document.getElementById('startButton');
 var callButton = document.getElementById('callButton');
 var hangupButton = document.getElementById('hangupButton');
 var remoteVideo = document.getElementById('remoteVideo');
-var localUserId;
-var socket;
-var room = 'demo-room';
-var pcs = {};
 
 callButton.disabled = true;
 hangupButton.disabled = true;
@@ -23,6 +32,12 @@ function handleUserJoined(userId) {
     offerToReceiveVideo: 1
   };
   var pc = createPeerConnection(userId);
+  socket.emit('callstats', callstatsEvents.addFabric, room, localUserId, userId, endpointInfo);
+  var domError = {
+    message: 'getusermedia error',
+    name: 'media error'
+  };
+  socket.emit('callstats', callstatsEvents.reportError, localUserId, 'getUserMedia', domError);
   pc.createOffer(offerOptions)
   .then( (desc) => {
     onCreateOfferSuccess(desc, userId);
@@ -33,12 +48,17 @@ function handleUserJoined(userId) {
 }
 
 function handleMessage(userId, msg) {
-  console.log('handleMessage ', userId, msg);
   var pc;
   if (pcs[userId]) {
     pc = pcs[userId];
   } else {
     pc = createPeerConnection(userId);
+    socket.emit('callstats', callstatsEvents.addFabric, room, localUserId, userId, endpointInfo);
+    var domError = {
+      message: 'getusermedia error',
+      name: 'media error'
+    };
+    socket.emit('callstats', callstatsEvents.reportError, localUserId, 'getUserMedia', domError);
   }
 
   var json = JSON.parse(msg);
@@ -95,6 +115,8 @@ function initSignaling() {
   socket.on('message', function(userId, message) {
     handleMessage(userId, message);
   });
+
+  socket.emit('callstats', callstatsEvents.startConference, room);
 }
 initSignaling();
 
@@ -152,12 +174,52 @@ function hangup() {
   }
 }
 
+function startStatsPolling(pc) {
+  getStats(pc, function(stats) {
+    socket.emit('callstats', callstatsEvents.stats, localUserId, stats);
+    setTimeout(function() {
+      startStatsPolling(pc);
+    }, 10000);
+  });
+}
+
+function onIceConnectionStateChange() {
+  socket.emit('callstats', callstatsEvents.iceGatheringStateChange, localUserId, this.iceGatheringState);
+  var state = this.iceConnectionState;
+  getIceCandidatesfromStats(this, function(obj) {
+    socket.emit('callstats', callstatsEvents.iceConnectionStateChange, localUserId, state, obj);
+  });
+  if (state === 'connected' || state === 'completed') {
+    console.log("trying to send SDP", this);
+    var localSDP = this["localDescription"].sdp;
+    var remoteSDP = this["remoteDescription"].sdp;
+    console.log("send SDP");
+    socket.emit('callstats', callstatsEvents.sdp, localUserId, localSDP, remoteSDP);
+    if (isPolling) {
+      return;
+    }
+    isPolling = true;
+    startStatsPolling(this);
+  }
+}
+
+function onSignalingStateChange() {
+  console.log('onSignalingStateChange', this);
+  socket.emit('callstats', callstatsEvents.signalingStateChange, localUserId, this.signalingState);
+}
+
 function createPeerConnection(userId) {
   var pc = new RTCPeerConnection();
   pc.onicecandidate = onIceCandidate; // Ice candidate event handler
+  pc.oniceconnectionstatechange = onIceConnectionStateChange;
+  pc.onsignalingstatechange = onSignalingStateChange;
   pc.addStream(localStream); // adding the localStream on to the peerconnection
   pc.onaddstream = gotRemoteStream; // setting the add stream event listener
   pcs[userId] = pc;
+  collectConnectedDevices(function (devices) {
+    socket.emit('callstats',callstatsEvents.connectedDevices, localUserId, devices);
+    sendFeedback();
+  });
   return pc;
 }
 
@@ -200,4 +262,21 @@ function getUserId(pc) {
       return userId;
     }
   }
+}
+
+window.onbeforeunload = function() {
+  if (socket) {
+    socket.emit('close', localUserId, room);
+  }
+  return;
+}
+
+function sendFeedback() {
+  var feedback = {
+    overallRating: 1,
+    videoQualityRating: 1,
+    audioQualityRating: 1,
+    comments: "ok ok"
+  };
+  socket.emit('callstats',callstatsEvents.userFeedback, room, localUserId, feedback);
 }
