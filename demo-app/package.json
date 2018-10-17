@@ -9,7 +9,8 @@
   "author": "Karthik Budigere <karthik@callstats.io> (http://callsats.io)",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.16.2",
-    "socket.io": "^2.0.4"
+    "express": "^4.16.4",
+    "node-callstats": "file:node-callstats-1.0.0.tgz",
+    "socket.io": "^2.1.1"
   }
 }

@@ -1,13 +1,13 @@
 var express = require('express');
 var http = require('http');
 var socketIO = require('socket.io');
-var Callstats = require("node-callstats/callstats-debug");
+var Callstats = require("node-callstats/callstats");
 var callstatsEvents = require("./src/js/constants");
 var conferences = [];
 var fabrics = [];
 
-var appID = '1234567'; // eslint-disable-line
-var appSecret = 'app_secret'; // eslint-disable-line
+var appID = 'appID'; // eslint-disable-line
+var appSecret = 'appSecret'; // eslint-disable-line
 var callStats = new Callstats(appID, appSecret, 'endpointID'); // eslint-disable-line
 
 var app = express();
@@ -152,6 +152,11 @@ function signalingStateChange(args) {
   fabric.sendSignallingStateChangeEvent(state, timestamp);
 }
 
+const streamType = {
+  inbound: 'inbound',
+  outbound: 'outbound',
+};
+
 function handleSDP(args) {
   var timestamp = getCurrent();
   var localUserId = args[1];
@@ -166,6 +171,15 @@ function handleSDP(args) {
   };
   fabric.sendEvent("sdpSubmission", timestamp, eventValue);
   fabric.sendEvent("audioMute", timestamp);
+  parseSDP(eventValue.localSDP, streamType.outbound, localUserId);
+  parseSDP(eventValue.remoteSDP, streamType.inbound, localUserId);
+  var ssrcData = [];
+  ssrcMap.forEach(function(data, ssrc) {
+    if (data.msid && data.mslabel && data.label) {
+      ssrcData.push(data);
+    }
+  });
+  fabric.sendSSRCData(ssrcData, timestamp);
 }
 
 function handleConnectedDevices(args) {
@@ -217,6 +231,45 @@ function handleStats(args) {
     return;
   }
   fabric.sendStats(stats, timestamp);
+}
+
+let ssrcMap = new Map();
+
+function parseSDP(sdp, sdpType, userId) {
+  let validLine = RegExp.prototype.test.bind(/^([a-z])=(.*)/);
+  let ssrcReg = /^ssrc:(\d*) ([\w_]*):(.*)/;
+  let simGroupReg = /^ssrc-group:SIM (\d*)/;
+
+  sdp.split(/(\r\n|\r|\n)/).filter(validLine).forEach((val) => {
+    let type = val[0];
+    let content = val.slice(2);
+    if (type !== 'a' || !ssrcReg.test(content)) {
+      return;
+    }
+    let match = content.match(ssrcReg);
+    let ssrc = match[1];
+    let key = match[2]; // key can be cname, msid, mslable and label
+    let value = match[3];
+    let ssrcInfo = ssrcMap.get(ssrc);
+    if (!ssrcInfo) {
+      ssrcInfo = {};
+    }
+
+    ssrcInfo.ssrc = ssrc;
+    ssrcInfo[key] = value;
+    ssrcInfo.localStartTime = getCurrent();
+    ssrcInfo.streamType = sdpType;
+    ssrcInfo.userID = userId;
+
+    if (!simGroupReg.test(content)) {
+      ssrcMap.set(ssrc, ssrcInfo);
+      return;
+    }
+    ssrcInfo.ssrcGroup = {};
+    ssrcInfo.ssrcGroup[sdpType] = {};
+    ssrcInfo.ssrcGroup[sdpType].simulcastGroup = content.match(/\d+/g);
+    ssrcMap.set(ssrc, ssrcInfo);
+  });
 }
 
 function handleCallstatsEvent(args) {
